@@ -974,15 +974,28 @@ Func _Idle() ;Sequence that runs until Full Army
 	If $g_bDebugSetlog Then SetLog("Func Idle ", $COLOR_DEBUG)
 
 	; samm0d - check make donate type account enter idle loop
+	Local $bSkipEnterIdleLoop = False
+	Local $bDonateTypeAcc = False
 	If $ichkEnableMySwitch Then
 		If $iCurActiveAcc <> -1 Then
 			For $i = 0 To UBound($aSwitchList) - 1
 				If $aSwitchList[$i][4] = $iCurActiveAcc Then
 					If $aSwitchList[$i][2] = 1 Then
-						$g_bIsFullArmywithHeroesAndSpells = False
+						$bDonateTypeAcc = True
+						ExitLoop
 					EndIf
 				EndIf
 			Next
+		EndIf
+		If $bDonateTypeAcc = False Then
+			If $bAvoidSwitch = False Then
+				If $g_bIsFullArmywithHeroesAndSpells = False Then
+					$g_bRestart = True
+				EndIf
+				$g_bIsFullArmywithHeroesAndSpells = True
+			Else
+				SetLog("Enter Idle Loop, troops getting ready or soon.", $COLOR_INFO)
+			EndIf
 		EndIf
 	EndIf
 
