@@ -137,10 +137,7 @@ Func DonateCC($bCheckForNewMsg = False)
 	; samm0d
 	Local $bDonateWindowOpen = False
 	Local $bDonateFlag = False
-	Local $canDonCustomA = False
-	Local $canDonCustomB = False
-	Local $canDonCustomC = False
-	Local $canDonCustomD = False
+	Local $canDonCustom = False
 
 	; add scroll here
 	While 1
@@ -154,9 +151,13 @@ Func DonateCC($bCheckForNewMsg = False)
 		ExitLoop
 	WEnd
 
+	Local $itime = TimerInit()
+	Local $iBenchmark ; = TimerDiff($hTimer)
+	Local $Buttons = 0
 	While $bDonate
 		checkAttackDisable($g_iTaBChkIdle) ; Early Take-A-Break detection
 		$ClanString = ""
+		$itime = TimerInit()
 
 		;samm0d reset value
 		;=========================
@@ -168,10 +169,7 @@ Func DonateCC($bCheckForNewMsg = False)
 			Local $iTroopIndex = $g_aiDonateTroopPriority[$i]
 			Assign("canDon" & $g_asTroopShortNames[$iTroopIndex], False)
 		Next
-		$canDonCustomA = False
-		$canDonCustomB = False
-		$canDonCustomC = False
-		$canDonCustomD = False
+		$canDonCustom = False
 
 		For $i = 0 To UBound($g_aiDonateSpellPriority) - 1
 			Local $iSpellIndex = $g_aiDonateSpellPriority[$i]
@@ -184,89 +182,75 @@ Func DonateCC($bCheckForNewMsg = False)
 			SetLog("Close Chat button not found - Abandon Donate", $COLOR_RED)
 			ExitLoop
 		EndIf
-
 		;==========================
 
-		;$g_aiDonatePixel = _MultiPixelSearch(202, $y, 224, 660 + $g_iBottomOffsetY, 50, 1, Hex(0x98D057, 6), $aChatDonateBtnColors, 20)
+		;;; get the Request Buttons
 		$g_aiDonatePixel = _MultiPixelSearch(200, $y, 230, 660 + $g_iBottomOffsetY, -2, 1, Hex(0x6da725, 6), $aChatDonateBtnColors, 20)
+		$iBenchmark = TimerDiff($itime)
+		If $g_bDebugSetlog Then SetDebugLog("Get all Buttons in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+		$itime = TimerInit()
 		If IsArray($g_aiDonatePixel) Then ; if Donate Button found
+			$Buttons += 1
+			If $g_bDebugSetlog Then SetDebugLog("***** Donate Request Number " & $Buttons & " *****", $COLOR_ACTION)
 			If $g_bDebugSetlog Then SetDebugLog("$g_aiDonatePixel: (" & $g_aiDonatePixel[0] & "," & $g_aiDonatePixel[1] & ")", $COLOR_DEBUG)
 			; samm0d
 			SetLog(_PadStringCenter(" CC Request ", 54, "="), $COLOR_INFO)
 
-			; collect donate users images
+			;;; Collect Donate users images
 			$donateCCfilter = donateCCWBLUserImageCollect($g_aiDonatePixel[0], $g_aiDonatePixel[1])
 
-			;reset every run
+			;;; reset every run
 			$bDonate = False
 			$g_bSkipDonTroops = False
 			$g_bSkipDonSpells = False
 
-			;Read chat request for DonateTroop and DonateSpell
+			;;; Read chat request for DonateTroop and DonateSpell
 			If $bDonateTroop Or $bDonateSpell And $donateCCfilter Then
-				If $g_bChkExtraAlphabets Then
-					; Chat Request using "coc-latin-cyr" xml: Latin + Cyrillic derived alphabets / three paragraphs
-					SetLog("Using OCR to read Latin and Cyrillic derived alphabets..", $COLOR_ACTION)
-					$ClanString = ""
-					$ClanString = getChatString(30, $g_aiDonatePixel[1] - 50, "coc-latin-cyr")
-					If $ClanString = "" Then
-						$ClanString = getChatString(30, $g_aiDonatePixel[1] - 36, "coc-latin-cyr")
+				Local $Alphabets[4] = [$g_bChkExtraAlphabets, $g_bChkExtraChinese, $g_bChkExtraKorean, $g_bChkExtraPersian]
+				Local $Yaxis[4] = [50, 26, 26, 31]
+				Local $TextAlphabetsNames[4] = ["Cyrillic and Latin", "Chinese", "Korean", "Persian"]
+				Local $AlphabetFunctions[4] = ["getChatString", "getChatStringChinese", "getChatStringKorean", "getChatStringPersian"]
+				Local $BlankSpaces = ""
+
+				For $i = 0 To UBound($Alphabets) - 1
+					If $i = 0 Then
+						Local $coordinates[3] = [50, 36, 23] ; Extra coordinates for Latin
+						Local $OcrName = ($Alphabets[$i] = True) ? ("coc-latin-cyr") : ("coc-latinA")
+						Local $log = "Latin"
+						If $Alphabets[$i] Then $log = $TextAlphabetsNames[$i]
+						$ClanString = ""
+						SetLog("Using OCR to read " & $log & " derived alphabets.", $COLOR_ACTION)
+						For $j = 0 To 2
+							If $ClanString = "" Or $ClanString = " " Then
+								$ClanString &= $BlankSpaces & getChatString(30, $g_aiDonatePixel[1] - $coordinates[$j], $OcrName)
+								If $g_bDebugSetlog Then SetDebugLog("$OcrName: " & $OcrName)
+								If $g_bDebugSetlog Then SetDebugLog("$coordinates: " & $coordinates[$j])
+								If $g_bDebugSetlog Then SetDebugLog("$ClanString: " & $ClanString)
+								If $ClanString <> "" And $ClanString <> " " Then ExitLoop
+							EndIf
+							If $ClanString <> "" Then $BlankSpaces = " "
+						Next
 					Else
-						$ClanString &= " " & getChatString(30, $g_aiDonatePixel[1] - 36, "coc-latin-cyr")
+						If $Alphabets[$i] Then
+							If $ClanString = "" Or $ClanString = " " Then
+								SetLog("Using OCR to read " & $TextAlphabetsNames[$i] & " alphabets.", $COLOR_ACTION)
+								; Ensure used functions are references in "MBR References.au3"
+								#Au3Stripper_Off
+								$ClanString &= $BlankSpaces & Call($AlphabetFunctions[$i], 30, $g_aiDonatePixel[1] - $Yaxis[$i])
+								#Au3Stripper_On
+								If @error = 0xDEAD And @extended = 0xBEEF Then SetLog("[DonatCC] Function " & $AlphabetFunctions[$i] & "() had a problem.")
+								If $g_bDebugSetlog Then SetDebugLog("$OcrName: " & $OcrName)
+								If $g_bDebugSetlog Then SetDebugLog("$Yaxis: " & $Yaxis[$i])
+								If $g_bDebugSetlog Then SetDebugLog("$ClanString: " & $ClanString)
+								If $ClanString <> "" And $ClanString <> " " Then ExitLoop
+							EndIf
+						EndIf
 					EndIf
-					If $ClanString = "" Or $ClanString = " " Then
-						$ClanString = getChatString(30, $g_aiDonatePixel[1] - 23, "coc-latin-cyr")
-					Else
-						$ClanString &= " " & getChatString(30, $g_aiDonatePixel[1] - 23, "coc-latin-cyr")
-					EndIf
-					If _Sleep($DELAYDONATECC2) Then ExitLoop
-				Else ; default
-					; Chat Request using "coc-latinA" xml: only Latin derived alphabets / three paragraphs
-					SetLog("Using OCR to read Latin derived alphabets..", $COLOR_ACTION)
-					$ClanString = ""
-					$ClanString = getChatString(30, $g_aiDonatePixel[1] - 50, "coc-latinA")
-					If $ClanString = "" Then
-						$ClanString = getChatString(30, $g_aiDonatePixel[1] - 36, "coc-latinA")
-					Else
-						$ClanString &= " " & getChatString(30, $g_aiDonatePixel[1] - 36, "coc-latinA")
-					EndIf
-					If $ClanString = "" Or $ClanString = " " Then
-						$ClanString = getChatString(30, $g_aiDonatePixel[1] - 23, "coc-latinA")
-					Else
-						$ClanString &= " " & getChatString(30, $g_aiDonatePixel[1] - 23, "coc-latinA")
-					EndIf
-					If _Sleep($DELAYDONATECC2) Then ExitLoop
-				EndIf
-				; Chat Request using IMGLOC: Chinese alphabet / one paragraph
-				If $g_bChkExtraChinese Then
-					SetLog("Using OCR to read the Chinese alphabet..", $COLOR_ACTION)
-					If $ClanString = "" Then
-						$ClanString = getChatStringChinese(30, $g_aiDonatePixel[1] - 26)
-					Else
-						$ClanString &= " " & getChatStringChinese(30, $g_aiDonatePixel[1] - 26)
-					EndIf
-					If _Sleep($DELAYDONATECC2) Then ExitLoop
-				EndIf
-				; Chat Request using IMGLOC: Korean alphabet / one paragraph
-				If $g_bChkExtraKorean Then
-					SetLog("Using OCR to read the Korean alphabet..", $COLOR_ACTION)
-					If $ClanString = "" Then
-						$ClanString = getChatStringKorean(30, $g_aiDonatePixel[1] - 24)
-					Else
-						$ClanString &= " " & getChatStringKorean(30, $g_aiDonatePixel[1] - 24)
-					EndIf
-					If _Sleep($DELAYDONATECC2) Then ExitLoop
-				EndIf
-				; Chat Request using IMGLOC: Persian alphabet / one paragraph
-				If $g_bChkExtraPersian Then
-					SetLog("Using OCR to read the Persian alphabet..", $COLOR_ACTION)
-					If $ClanString = "" Then
-						$ClanString = getChatStringPersian(30, $g_aiDonatePixel[1] - 31)
-					Else
-						$ClanString &= " " & getChatStringPersian(30, $g_aiDonatePixel[1] - 31)
-					EndIf
-					If _Sleep($DELAYDONATECC2) Then ExitLoop
-				EndIf
+				Next
+
+				$iBenchmark = TimerDiff($itime)
+				If $g_bDebugSetlog Then SetDebugLog("Get Request OCR in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+				$itime = TimerInit()
 				; samm0d
 				If $ichkEnableCustomOCR4CCRequest = 1 Then
 					Setlog("Using custom OCR to read cc request message..", $COLOR_ACTION)
@@ -296,9 +280,13 @@ Func DonateCC($bCheckForNewMsg = False)
 				SetLog("Skip reading chat requests. Donate all is enabled!", $COLOR_ACTION)
 			EndIf
 
-			; Get remaining CC capacity of requested troops from your ClanMates
+			;;; Get remaining CC capacity of requested troops from your ClanMates
 			RemainingCCcapacity()
+			$iBenchmark = TimerDiff($itime)
+			If $g_bDebugSetlog Then SetDebugLog("Get remaining CC capacity in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+			$itime = TimerInit()
 
+			;;; Donate Filter
 			If Not $donateCCfilter Then
 				SetLog("Skip Donation at this Clan Mate...", $COLOR_ACTION)
 				$g_bSkipDonTroops = True
@@ -329,14 +317,19 @@ Func DonateCC($bCheckForNewMsg = False)
 				EndIf
 			EndIf
 
+			;;; Flagged to Skip Check
 			If $g_bSkipDonTroops And $g_bSkipDonSpells Then
 				$bDonate = True
 				$y = $g_aiDonatePixel[1] + 50
 				ContinueLoop ; go to next button if cant read Castle Troops and Spells before the donate window opens
 			EndIf
 
-			; ==== samm0d
-			; compare
+			;;; Variables to use in Loops for Custom.A to Custom.D
+			Local $eCustom[4] = [$eCustomA, $eCustomB, $eCustomC, $eCustomD]
+			Local $eDonateCustom[4] = [$g_aiDonateCustomTrpNumA, $g_aiDonateCustomTrpNumB, $g_aiDonateCustomTrpNumC, $g_aiDonateCustomTrpNumD]
+
+			;samm0d compare
+			;=========================
 			If $bDonateTroop And $g_bSkipDonTroops = False Then
 				For $i = 0 To UBound($g_aiDonateTroopPriority) - 1
 					Local $iTroopIndex = $g_aiDonateTroopPriority[$i]
@@ -347,107 +340,35 @@ Func DonateCC($bCheckForNewMsg = False)
 					EndIf
 				Next
 
-				If $g_abChkDonateTroop[$eCustomA] Then
-					$canDonCustomA = CheckDonate(99, $g_asTxtDonateTroop[$eCustomA], $g_asTxtBlacklistTroop[$eCustomA], $ClanString, True)
-					If $canDonCustomA Then
-						If $ichkEnableDonateWhenReady = 1 Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumA[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumA[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumA[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumA[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumA[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumA[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumA[$i][0]]) < $g_aiDonateCustomTrpNumA[$i][1] Then
-									SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumA[$i][0]], $COLOR_RED)
-									$canDonCustomA = False
-								EndIf
-							Next
+				For $x = 0 To UBound($eDonateCustom) - 1
+					If $g_abChkDonateTroop[$eCustom[$x]] Then
+						$canDonCustom = CheckDonateTroop(99, $g_asTxtDonateTroop[$eCustom[$x]], $g_asTxtBlacklistTroop[$eCustom[$x]], $ClanString, True)
+						If $canDonCustom Then
+							If $ichkEnableDonateWhenReady = 1 Then
+								For $i = 0 To 2
+									If $CorrectDonateCustom[$i][0] < $eBarb Then
+										$CorrectDonateCustom[$i][0] = $eArch ; Change strange small numbers to archer
+									ElseIf $CorrectDonateCustom[$i][0] > $eBowl Then
+										ContinueLoop ; If "Nothing" is selected then continue
+									EndIf
+									If $CorrectDonateCustom[$i][1] < 1 Then
+										ContinueLoop ; If donate number is smaller than 1 then continue
+									ElseIf $CorrectDonateCustom[$i][1] > 8 Then
+										$CorrectDonateCustom[$i][1] = 8 ; Number larger than 8 is unnecessary
+									EndIf
+									If Eval("Ready" & $g_asTroopShortNames[$CorrectDonateCustom[$i][0]]) < $CorrectDonateCustom[$i][1] Then
+										SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$CorrectDonateCustom[$i][0]], $COLOR_RED)
+										$canDonCustom = False
+									EndIf
+								Next
+							EndIf
 						EndIf
+						If $canDonCustom Then $bDonateFlag = True
 					EndIf
-					If $canDonCustomA Then $bDonateFlag = True
-				EndIf
-				If $g_abChkDonateTroop[$eCustomB] Then
-					$canDonCustomB = CheckDonate(99, $g_asTxtDonateTroop[$eCustomB], $g_asTxtBlacklistTroop[$eCustomB], $ClanString, True)
-					If $canDonCustomB Then
-						If $ichkEnableDonateWhenReady = 1 Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumB[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumB[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumB[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumB[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumB[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumB[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumB[$i][0]]) < $g_aiDonateCustomTrpNumB[$i][1] Then
-									SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumB[$i][0]], $COLOR_RED)
-									$canDonCustomB = False
-								EndIf
-							Next
-						EndIf
-					EndIf
-					If $canDonCustomB Then $bDonateFlag = True
-				EndIf
-
-				If $g_abChkDonateTroop[$eCustomC] Then
-					$canDonCustomC = CheckDonate(99, $g_asTxtDonateTroop[$eCustomC], $g_asTxtBlacklistTroop[$eCustomC], $ClanString, True)
-					If $canDonCustomC Then
-						If $ichkEnableDonateWhenReady = 1 Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumC[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumC[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumC[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumC[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumC[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumC[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumC[$i][0]]) < $g_aiDonateCustomTrpNumC[$i][1] Then
-									SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumC[$i][0]], $COLOR_RED)
-									$canDonCustomC = False
-								EndIf
-							Next
-						EndIf
-					EndIf
-					If $canDonCustomC Then $bDonateFlag = True
-				EndIf
-
-				If $g_abChkDonateTroop[$eCustomD] Then
-					$canDonCustomD = CheckDonate(99, $g_asTxtDonateTroop[$eCustomD], $g_asTxtBlacklistTroop[$eCustomD], $ClanString, True)
-					If $canDonCustomD Then
-						If $ichkEnableDonateWhenReady = 1 Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumD[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumD[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumD[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumD[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumD[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumD[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumD[$i][0]]) < $g_aiDonateCustomTrpNumD[$i][1] Then
-									SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumD[$i][0]], $COLOR_RED)
-									$canDonCustomD = False
-								EndIf
-							Next
-						EndIf
-					EndIf
-					If $canDonCustomD Then $bDonateFlag = True
-				EndIf
-
+				Next
 			EndIf
 
+			;;;  DONATION TROOPS
 			If $bDonateSpell And Not $g_bSkipDonSpells Then
 				If $g_bDebugSetlog Then Setlog("Spell checkpoint.", $COLOR_DEBUG)
 				For $i = 0 To UBound($g_aiDonateSpellPriority) - 1
@@ -460,6 +381,7 @@ Func DonateCC($bCheckForNewMsg = False)
 			EndIf
 
 			If $bDonateFlag Then
+				;;; Typical Donation
 				If $bDonateTroop Or $bDonateSpell Then
 					; open Donate Window
 					;If _Sleep(1000) Then Return
@@ -486,108 +408,58 @@ Func DonateCC($bCheckForNewMsg = False)
 					If $g_bDebugSetlog Then Setlog("Troop checkpoint.", $COLOR_DEBUG)
 
 					If $bDonateTroop And $g_bSkipDonTroops = False Then
-						;;; Custom Combination Donate by ChiefM3, edited by MonkeyHunter
-						If $canDonCustomA Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumA[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumA[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumA[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
+						;;;  Custom Combination Troops
+						For $x = 0 To UBound($eDonateCustom) - 1
+							If $g_abChkDonateTroop[$eCustom[$x]] And CheckDonateTroop(99, $g_asTxtDonateTroop[$eCustom[$x]], $g_asTxtBlacklistTroop[$eCustom[$x]], $ClanString) Then
+								Local $CorrectDonateCustom = $eDonateCustom[$x]
+								If $canDonCustom Then
+									For $i = 0 To 2
+										If $CorrectDonateCustom[$i][0] < $eBarb Then
+											$CorrectDonateCustom[$i][0] = $eArch ; Change strange small numbers to archer
+										ElseIf $CorrectDonateCustom[$i][0] > $eBowl Then
+											ContinueLoop ; If "Nothing" is selected then continue
+										EndIf
+										If $CorrectDonateCustom[$i][1] < 1 Then
+											ContinueLoop ; If donate number is smaller than 1 then continue
+										ElseIf $CorrectDonateCustom[$i][1] > 8 Then
+											$CorrectDonateCustom[$i][1] = 8 ; Number larger than 8 is unnecessary
+										EndIf
+										If $ichkEnableDonateWhenReady = 1 Then
+											If Eval("Ready" & $g_asTroopShortNames[$CorrectDonateCustom[$i][0]]) < $CorrectDonateCustom[$i][1] Then
+												SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$CorrectDonateCustom[$i][0]], $COLOR_RED)
+												$canDonCustomA = False
+											EndIf
+										EndIf
+										If $canDonCustom Then DonateTroopType($CorrectDonateCustom[$i][0], $CorrectDonateCustom[$i][1], $g_abChkDonateTroop[$eCustom[$x]])
+									Next
 								EndIf
-								If $g_aiDonateCustomTrpNumA[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumA[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumA[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If $ichkEnableDonateWhenReady = 1 Then
-									If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumA[$i][0]]) < $g_aiDonateCustomTrpNumA[$i][1] Then
-										SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumA[$i][0]], $COLOR_RED)
-										$canDonCustomA = False
-									EndIf
-								EndIf
-								If $canDonCustomA Then DonateTroopType($g_aiDonateCustomTrpNumA[$i][0], $g_aiDonateCustomTrpNumA[$i][1], $g_abChkDonateTroop[$eCustomA]) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-						EndIf
-						If $canDonCustomB Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumB[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumB[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumB[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumB[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumB[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumB[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If $ichkEnableDonateWhenReady = 1 Then
-									If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumB[$i][0]]) < $g_aiDonateCustomTrpNumB[$i][1] Then
-										SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumB[$i][0]], $COLOR_RED)
-										$canDonCustomB = False
-									EndIf
-								EndIf
-								If $canDonCustomB Then DonateTroopType($g_aiDonateCustomTrpNumB[$i][0], $g_aiDonateCustomTrpNumB[$i][1], $g_abChkDonateTroop[$eCustomB]) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-						EndIf
-						If $canDonCustomC Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumC[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumC[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumC[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumC[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumC[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumC[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If $ichkEnableDonateWhenReady = 1 Then
-									If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumC[$i][0]]) < $g_aiDonateCustomTrpNumC[$i][1] Then
-										SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumC[$i][0]], $COLOR_RED)
-										$canDonCustomC = False
-									EndIf
-								EndIf
-								If $canDonCustomC Then DonateTroopType($g_aiDonateCustomTrpNumC[$i][0], $g_aiDonateCustomTrpNumC[$i][1], $g_abChkDonateTroop[$eCustomC]) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-						EndIf
-						If $canDonCustomD Then
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumD[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumD[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumD[$i][0] > $eBowl Then
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumD[$i][1] < 1 Then
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumD[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumD[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								If $ichkEnableDonateWhenReady = 1 Then
-									If Eval("Ready" & $g_asTroopShortNames[$g_aiDonateCustomTrpNumD[$i][0]]) < $g_aiDonateCustomTrpNumD[$i][1] Then
-										SetLog("Pre-Train not ready, skip donate " & $g_asTroopNames[$g_aiDonateCustomTrpNumD[$i][0]], $COLOR_RED)
-										$canDonCustomD = False
-									EndIf
-								EndIf
-								If $canDonCustomD Then DonateTroopType($g_aiDonateCustomTrpNumD[$i][0], $g_aiDonateCustomTrpNumD[$i][1], $g_abChkDonateTroop[$eCustomD]) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-						EndIf
+							EndIf
+						Next
 
+						;;;  Typical Donate troops
 						For $i = 0 To UBound($g_aiDonateTroopPriority) - 1
 							Local $iTroopIndex = $g_aiDonateTroopPriority[$i]
 							If Eval("canDon" & $g_asTroopShortNames[$iTroopIndex]) = True Then
 								DonateTroopType($iTroopIndex)
 							EndIf
 						Next
+						$iBenchmark = TimerDiff($itime)
+						If $g_bDebugSetlog Then SetDebugLog("Get Donated troops in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+						$itime = TimerInit()
 					EndIf
 
 					If $g_bDebugSetlog Then Setlog("Spell checkpoint.", $COLOR_DEBUG)
+ 					;;; DONATION SPELLS
 					If $bDonateSpell And Not $g_bSkipDonSpells Then
 						For $i = 0 To UBound($g_aiDonateSpellPriority) - 1
 							Local $iSpellIndex = $g_aiDonateSpellPriority[$i]
 							If Eval("canDon" & $g_asSpellNames[$iSpellIndex]) = True Then
 								DonateSpellType($iSpellIndex)
 							EndIf
-						Next
+						 Next
+						 $iBenchmark = TimerDiff($itime)
+						 If $g_bDebugSetlog Then SetDebugLog("Get Donated Spells in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+						 $itime = TimerInit()
 					EndIf
 				EndIf
 
@@ -597,6 +469,7 @@ Func DonateCC($bCheckForNewMsg = False)
 				EndIf
 			EndIf
 
+			;;; Donate to All Zone
 			If $bDonateAllTroop Or $bDonateAllSpell Then
 				If $g_bDebugSetlog Then Setlog("Troop/Spell All checkpoint.", $COLOR_DEBUG) ;Debug
 				$g_bDonateAllRespectBlk = True
@@ -614,6 +487,10 @@ Func DonateCC($bCheckForNewMsg = False)
 
 				; read available donate cap, and ByRef set the $g_bSkipDonTroops and $g_bSkipDonSpells flags
 				DonateWindowCap($g_bSkipDonTroops, $g_bSkipDonSpells)
+				$iBenchmark = TimerDiff($itime)
+				Setlog("Get available donate cap (to all) in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+				$itime = TimerInit()
+
 				If $g_bSkipDonTroops And $g_bSkipDonSpells Then
 					DonateWindow($bClose)
 					$bDonateWindowOpen = False
@@ -624,103 +501,37 @@ Func DonateCC($bCheckForNewMsg = False)
 				EndIf
 
 				If $bDonateAllTroop And Not $g_bSkipDonTroops Then
-
 					;$bDonateAllRespectBlk = True
 					If $g_bDebugSetlog Then Setlog("Troop All checkpoint.", $COLOR_DEBUG)
-					Select
-						Case $g_abChkDonateAllTroop[$eCustomA]
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumA[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumA[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumA[$i][0] > $eBowl Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumA[$i][1] < 1 Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumA[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumA[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								DonateTroopType($g_aiDonateCustomTrpNumA[$i][0], $g_aiDonateCustomTrpNumA[$i][1], $g_abChkDonateAllTroop[$eCustomA], $bDonateAllTroop) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-
-						Case $g_abChkDonateAllTroop[$eCustomB]
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumB[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumB[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumB[$i][0] > $eBowl Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumB[$i][1] < 1 Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumB[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumB[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								DonateTroopType($g_aiDonateCustomTrpNumB[$i][0], $g_aiDonateCustomTrpNumB[$i][1], $g_abChkDonateAllTroop[$eCustomB], $bDonateAllTroop) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-
-						Case $g_abChkDonateAllTroop[$eCustomC]
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumC[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumC[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumC[$i][0] > $eBowl Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumC[$i][1] < 1 Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumC[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumC[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								DonateTroopType($g_aiDonateCustomTrpNumC[$i][0], $g_aiDonateCustomTrpNumC[$i][1], $g_abChkDonateAllTroop[$eCustomC], $bDonateAllTroop) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-
-						Case $g_abChkDonateAllTroop[$eCustomD]
-							For $i = 0 To 2
-								If $g_aiDonateCustomTrpNumD[$i][0] < $eBarb Then
-									$g_aiDonateCustomTrpNumD[$i][0] = $eArch ; Change strange small numbers to archer
-								ElseIf $g_aiDonateCustomTrpNumD[$i][0] > $eBowl Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If "Nothing" is selected then continue
-								EndIf
-								If $g_aiDonateCustomTrpNumD[$i][1] < 1 Then
-									DonateWindow($bClose)
-									$bDonate = True
-									$y = $g_aiDonatePixel[1] + 50
-									;If _Sleep($DELAYDONATECC2) Then ExitLoop
-									ContinueLoop ; If donate number is smaller than 1 then continue
-								ElseIf $g_aiDonateCustomTrpNumD[$i][1] > 8 Then
-									$g_aiDonateCustomTrpNumD[$i][1] = 8 ; Number larger than 8 is unnecessary
-								EndIf
-								DonateTroopType($g_aiDonateCustomTrpNumD[$i][0], $g_aiDonateCustomTrpNumD[$i][1], $g_abChkDonateAllTroop[$eCustomD], $bDonateAllTroop) ;;; Donate Custom Troop using DonateTroopType2
-							Next
-
-						Case Else
+					;;; DONATE TO ALL for Custom And Typical Donation
+					; 0 to 3 is Custom [A to D] and the 4 is the 'Typical'
+					For $x = 0 To 4
+						If $x <> 4 Then
+							If $g_abChkDonateAllTroop[$eCustom[$x]] Then
+								Local $CorrectDonateCustom = $eDonateCustom[$x]
+								For $i = 0 To 2
+									If $CorrectDonateCustom[$i][0] < $eBarb Then
+										$CorrectDonateCustom[$i][0] = $eArch ; Change strange small numbers to archer
+									ElseIf $CorrectDonateCustom[$i][0] > $eBowl Then
+										DonateWindow($bClose)
+										$bDonate = True
+										$y = $g_aiDonatePixel[1] + 50
+										If _Sleep($DELAYDONATECC2) Then ExitLoop
+										ContinueLoop ; If "Nothing" is selected then continue
+									EndIf
+									If $CorrectDonateCustom[$i][1] < 1 Then
+										DonateWindow($bClose)
+										$bDonate = True
+										$y = $g_aiDonatePixel[1] + 50
+										If _Sleep($DELAYDONATECC2) Then ExitLoop
+										ContinueLoop ; If donate number is smaller than 1 then continue
+									ElseIf $CorrectDonateCustom[$i][1] > 8 Then
+										$CorrectDonateCustom[$i][1] = 8 ; Number larger than 8 is unnecessary
+									EndIf
+									DonateTroopType($CorrectDonateCustom[$i][0], $CorrectDonateCustom[$i][1], $g_abChkDonateAllTroop[$eCustom[$x]], $bDonateAllTroop) ;;; Donate Custom Troop using DonateTroopType2
+								Next
+							EndIf
+						Else ; this is the $x = 4 [Typical Donation]
 							For $i = 0 To UBound($g_aiDonateTroopPriority) - 1
 								Local $iTroopIndex = $g_aiDonateTroopPriority[$i]
 								If $g_abChkDonateAllTroop[$iTroopIndex] Then
@@ -730,8 +541,11 @@ Func DonateCC($bCheckForNewMsg = False)
 									ExitLoop
 								EndIf
 							Next
-
-					EndSelect
+						EndIf
+					Next
+					$iBenchmark = TimerDiff($itime)
+					If $g_bDebugSetlog Then SetDebugLog("Get Donated troops (to all) in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+					$itime = TimerInit()
 				EndIf
 
 				If $bDonateAllSpell And Not $g_bSkipDonSpells Then
@@ -746,20 +560,20 @@ Func DonateCC($bCheckForNewMsg = False)
 							ExitLoop
 						EndIf
 					Next
+					$iBenchmark = TimerDiff($itime)
+					If $g_bDebugSetlog Then SetDebugLog("Get Donated Spells (to all)  in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+					$itime = TimerInit()
 				EndIf
 				$g_bDonateAllRespectBlk = False
 			EndIf
 
-			;close Donate Window
-			DonateWindow($bClose)
-
 			$bDonate = True
 			$y = $g_aiDonatePixel[1] + 50
 			ClickP($aAway, 1, 0, "#0171")
-			; samm0d
-			;If _Sleep($DELAYDONATECC2) Then ExitLoop
+			If _Sleep($DELAYDONATEWINDOW1) Then ExitLoop
 		EndIf
-		;ck for more donate buttons
+
+		;;; Check for more donate buttons
 		ForceCaptureRegion()
 		; samm0d
 		If _Wait4Pixel($aButtonClanWindowClose[4],$aButtonClanWindowClose[5],$aButtonClanWindowClose[6],$aButtonClanWindowClose[7],1000,100,"aButtonClanWindowClose") = False Then
@@ -767,16 +581,18 @@ Func DonateCC($bCheckForNewMsg = False)
 			ExitLoop
 		EndIf
 
-		;$g_aiDonatePixel = _MultiPixelSearch(202, $y, 224, 660 + $g_iBottomOffsetY, 50, 1, Hex(0x98D057, 6), $aChatDonateBtnColors, 20)
 		$g_aiDonatePixel = _MultiPixelSearch(200, $y, 230, 660 + $g_iBottomOffsetY, -2, 1, Hex(0x6da725, 6), $aChatDonateBtnColors, 20)
+		$iBenchmark = TimerDiff($itime)
+		If $g_bDebugSetlog Then SetDebugLog("Get more donate buttons in " & StringFormat("%.2f", $iBenchmark) & "'ms", $COLOR_DEBUG)
+
 		If IsArray($g_aiDonatePixel) Then
 			If $g_bDebugSetlog Then SetDebugLog("More Donate buttons found, new $g_aiDonatePixel: (" & $g_aiDonatePixel[0] & "," & $g_aiDonatePixel[1] & ")", $COLOR_DEBUG)
 			ContinueLoop
 		Else
 			If $g_bDebugSetlog Then SetDebugLog("No more Donate buttons found, closing chat ($y=" & $y & ")", $COLOR_DEBUG)
 		EndIf
-		; Scroll Down
 
+		;;; Scroll Down
 		ForceCaptureRegion()
 
 		If _CheckColorPixel(295,655,0xFFFFFF,10) And _CheckColorPixel(301,662,0x5DA515,20) Then
@@ -1016,64 +832,63 @@ Func DonateTroopType(Const $iTroopIndex, $Quant = 0, Const $Custom = False, Cons
 				debugimagesave("LiveDonateCC-r" & $donaterow & "-c" & $donateposinrow & "-" & $g_asTroopNames[$iTroopIndex] & "_")
 			EndIf
 
-				; Use slow click when the Train system is Quicktrain
-				If $g_bQuickTrainEnable Then
-					Local $icount = 0
-					For $x = 0 To $Quant
-						If _ColorCheck(_GetPixelColor(350 + ($Slot * 68), $g_iDonationWindowY + 105 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
-								_ColorCheck(_GetPixelColor(355 + ($Slot * 68), $g_iDonationWindowY + 106 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
-								_ColorCheck(_GetPixelColor(360 + ($Slot * 68), $g_iDonationWindowY + 107 + $YComp, True), Hex(0x306ca8, 6), 20) Then ; check for 'blue'
-
-							Click(365 + ($Slot * 68), $g_iDonationWindowY + 100 + $YComp, 1, $DELAYDONATECC3, "#0175")
-							If $g_iCommandStop = 3 Then
-								$g_iCommandStop = 0
-								$g_bFullArmy = False
-							EndIf
-							; samm0d
-							$bJustMakeDonate = True
-							$tempDisableTrain = False
-							$iDonatedUnit += 1
-
-							If $ichkEnableDonateWhenReady = 1 Then
-								Assign("Ready" & $g_asTroopShortNames[$iTroopIndex], Eval("Ready" & $g_asTroopShortNames[$iTroopIndex]) - 1)
-							EndIf
-							If _Sleep(1000) Then Return
-							$icount += 1
-						EndIf
-					Next
-					$Quant = $icount ; Count Troops Donated Clicks
-					$g_aiDonateStatsTroops[$iTroopIndex][0] += $Quant
-				Else
+			; Use slow click when the Train system is Quicktrain
+			If $g_bQuickTrainEnable Then
+				Local $icount = 0
+				For $x = 0 To $Quant
 					If _ColorCheck(_GetPixelColor(350 + ($Slot * 68), $g_iDonationWindowY + 105 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
 							_ColorCheck(_GetPixelColor(355 + ($Slot * 68), $g_iDonationWindowY + 106 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
 							_ColorCheck(_GetPixelColor(360 + ($Slot * 68), $g_iDonationWindowY + 107 + $YComp, True), Hex(0x306ca8, 6), 20) Then ; check for 'blue'
 
-						Click(365 + ($Slot * 68), $g_iDonationWindowY + 100 + $YComp, $Quant, $DELAYDONATECC3, "#0175")
-						$g_aiDonateStatsTroops[$iTroopIndex][0] += $Quant
+						Click(365 + ($Slot * 68), $g_iDonationWindowY + 100 + $YComp, 1, $DELAYDONATECC3, "#0175")
 						If $g_iCommandStop = 3 Then
 							$g_iCommandStop = 0
 							$g_bFullArmy = False
 						EndIf
 						; samm0d
-						$iDonatedUnit += $Quant
 						$bJustMakeDonate = True
 						$tempDisableTrain = False
+						$iDonatedUnit += 1
+
 						If $ichkEnableDonateWhenReady = 1 Then
-							Assign("Ready" & $g_asTroopShortNames[$iTroopIndex], Eval("Ready" & $g_asTroopShortNames[$iTroopIndex]) - $Quant)
+							Assign("Ready" & $g_asTroopShortNames[$iTroopIndex], Eval("Ready" & $g_asTroopShortNames[$iTroopIndex]) - 1)
 						EndIf
+						If _Sleep(1000) Then Return
+						$icount += 1
+					EndIf
+				Next
+				$Quant = $icount ; Count Troops Donated Clicks
+				$g_aiDonateStatsTroops[$iTroopIndex][0] += $Quant
+			Else
+				If _ColorCheck(_GetPixelColor(350 + ($Slot * 68), $g_iDonationWindowY + 105 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
+						_ColorCheck(_GetPixelColor(355 + ($Slot * 68), $g_iDonationWindowY + 106 + $YComp, True), Hex(0x306ca8, 6), 20) Or _
+						_ColorCheck(_GetPixelColor(360 + ($Slot * 68), $g_iDonationWindowY + 107 + $YComp, True), Hex(0x306ca8, 6), 20) Then ; check for 'blue'
+
+					Click(365 + ($Slot * 68), $g_iDonationWindowY + 100 + $YComp, $Quant, $DELAYDONATECC3, "#0175")
+					$g_aiDonateStatsTroops[$iTroopIndex][0] += $Quant
+					If $g_iCommandStop = 3 Then
+						$g_iCommandStop = 0
+						$g_bFullArmy = False
+					EndIf
+					; samm0d
+					$iDonatedUnit += $Quant
+					$bJustMakeDonate = True
+					$tempDisableTrain = False
+					If $ichkEnableDonateWhenReady = 1 Then
+						Assign("Ready" & $g_asTroopShortNames[$iTroopIndex], Eval("Ready" & $g_asTroopShortNames[$iTroopIndex]) - $Quant)
 					EndIf
 				EndIf
+			EndIf
 
-				; Adjust Values for donated troops to prevent a Double ghost donate to stats and train
-				If $iTroopIndex >= $eTroopBarbarian And $iTroopIndex <= $eTroopBowler Then
-					;Reduce iTotalDonateCapacity by troops donated
-					$g_iTotalDonateCapacity -= ($Quant * $g_aiTroopSpace[$iTroopIndex])
-					;If donated max allowed troop qty set $g_bSkipDonTroops = True
-					If $g_iDonTroopsLimit = $Quant Then
-						$g_bSkipDonTroops = True
-					EndIf
+			; Adjust Values for donated troops to prevent a Double ghost donate to stats and train
+			If $iTroopIndex >= $eTroopBarbarian And $iTroopIndex <= $eTroopBowler Then
+				;Reduce iTotalDonateCapacity by troops donated
+				$g_iTotalDonateCapacity -= ($Quant * $g_aiTroopSpace[$iTroopIndex])
+				;If donated max allowed troop qty set $g_bSkipDonTroops = True
+				If $g_iDonTroopsLimit = $Quant Then
+					$g_bSkipDonTroops = True
 				EndIf
-
+			EndIf
 		Else
 			If $g_bDebugOCRdonate Then
 				SetLog("donate", $color_RED)
@@ -1380,7 +1195,7 @@ Func DonateWindowCap(ByRef $g_bSkipDonTroops, ByRef $g_bSkipDonSpells)
 				$iDonSpellsLimit = $aTempReadCCSpellsCap[2]
 			EndIf
 		Else
-			SetLog("Error reading the Castle Spells Capacity", $COLOR_ERROR) ; log if there is read error
+			SetLog("Are you able to donate Spells? ", $COLOR_ERROR) ; log if there is read error
 			$g_iDonSpellsAv = 0
 			$iDonSpellsLimit = 0
 		EndIf
@@ -1455,12 +1270,12 @@ Func RemainingCCcapacity()
 				EndIf
 			EndIf
 		Else
-			SetLog("Error reading the Castle Troop Capacity...", $COLOR_ERROR) ; log if there is read error
+			SetLog("Error reading the Castle Troop Capacity[1]...", $COLOR_ERROR) ; log if there is read error
 			$iDonatedTroops = 0
 			$iCapTroopsTotal = 0
 		EndIf
 	Else
-		SetLog("Error reading the Castle Troop Capacity...", $COLOR_ERROR) ; log if there is read error
+		SetLog("Error reading the Castle Troop Capacity[2]...", $COLOR_ERROR) ; log if there is read error
 		$iDonatedTroops = 0
 		$iCapTroopsTotal = 0
 	EndIf
@@ -1479,12 +1294,12 @@ Func RemainingCCcapacity()
 					$iCapSpellsTotal = $aTempCapSpells[2]
 				EndIf
 			Else
-				SetLog("Error reading the Castle Spell Capacity...", $COLOR_ERROR) ; log if there is read error
+				SetLog("Error reading the Castle Spell Capacity[1]...", $COLOR_ERROR) ; log if there is read error
 				$iDonatedSpells = 0
 				$iCapSpellsTotal = 0
 			EndIf
 		Else
-			SetLog("Error reading the Castle Spell Capacity...", $COLOR_ERROR) ; log if there is read error
+			SetLog("Error reading the Castle Spell Capacity[2]...", $COLOR_ERROR) ; log if there is read error
 			$iDonatedSpells = 0
 			$iCapSpellsTotal = 0
 		EndIf
@@ -1664,7 +1479,7 @@ Func SkipDonateNearFullTroops($bSetLog = False, $aHeroResult = Default)
 	EndIf
 EndFunc   ;==>SkipDonateNearFullTroops
 
-Func BalanceDonRec($bSetlog = False)
+Func BalanceDonRec($bSetLog = False)
 
 	If Not $g_bDonationEnabled Then Return False ; Will disable donation
 	If Not $g_bUseCCBalanced Then Return True ; will enable the donation
@@ -1680,7 +1495,7 @@ Func BalanceDonRec($bSetlog = False)
 		If Number($g_iTroopsReceived) <> 0 Then
 			If Number(Number($g_iTroopsDonated) / Number($g_iTroopsReceived)) >= (Number($g_iCCDonated) / Number($g_iCCReceived)) Then
 				;Stop Donating
-				If $bSetlog Then SetLog("Skipping Donation because Donate/Recieve Ratio is wrong", $COLOR_INFO)
+				If $bSetLog Then SetLog("Skipping Donation because Donate/Recieve Ratio is wrong", $COLOR_INFO)
 				Return False
 			Else
 				; Continue
